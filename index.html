@@ -1,0 +1,284 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Exam Seating Planner</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- TOP TOOLBAR -->
+  <div id="toolbar">
+    <div class="tb-group tb-format">
+      <label class="tb-label">Format:</label>
+      <select id="fontSizeSelect" title="Font size">
+        <option value="9">9</option>
+        <option value="10">10</option>
+        <option value="11" selected>11</option>
+        <option value="12">12</option>
+        <option value="14">14</option>
+        <option value="16">16</option>
+        <option value="18">18</option>
+      </select>
+      <button id="boldBtn" class="tb-btn" title="Bold"><b>B</b></button>
+      <button id="italicBtn" class="tb-btn" title="Italic"><i>I</i></button>
+      <button id="alignLeftBtn" class="tb-btn" title="Align left">&#8676;</button>
+      <button id="alignCenterBtn" class="tb-btn" title="Center">&#8801;</button>
+      <button id="alignRightBtn" class="tb-btn" title="Align right">&#8677;</button>
+    </div>
+    <div class="tb-divider"></div>
+    <div class="tb-group">
+      <label class="tb-label">Border:</label>
+      <input id="borderWidthInput" type="number" value="1" min="0" max="10" title="Border width (px)" style="width:44px;height:26px;border:1px solid #ccc;border-radius:3px;padding:0 4px;font-size:12px;">
+      <span style="font-size:11px;color:#666;">px</span>
+    </div>
+    <div class="tb-divider"></div>
+    <div class="tb-group">
+      <label class="tb-label">Fill:</label>
+      <input id="fillColorInput" type="color" value="#ffffff" title="Fill color" style="width:34px;height:26px;border:1px solid #ccc;border-radius:3px;padding:1px;background:#fff;cursor:pointer;">
+      <button id="clearFillBtn" class="tb-btn" title="Clear fill">No Fill</button>
+    </div>
+    <div class="tb-divider"></div>
+    <div class="tb-group">
+      <button id="undoBtn" class="tb-btn" title="Undo (Ctrl+Z)">&#8630; Undo</button>
+      <button id="redoBtn" class="tb-btn" title="Redo (Ctrl+Y)">&#8631; Redo</button>
+    </div>
+    <div class="tb-divider"></div>
+    <div class="tb-group">
+      <button id="cutBtn" class="tb-btn" title="Cut (Ctrl+X)">&#9986; Cut</button>
+      <button id="copyBtn" class="tb-btn" title="Copy (Ctrl+C)">&#128203; Copy</button>
+      <button id="pasteBtn" class="tb-btn" title="Paste (Ctrl+V)">&#128196; Paste</button>
+    </div>
+    <div class="tb-divider"></div>
+    <div class="tb-group">
+      <button id="sendToBackBtn" class="tb-btn" title="Send selected object to back">Send To Back</button>
+      <button id="bringToFrontBtn" class="tb-btn" title="Bring selected object to front">Bring To Front</button>
+    </div>
+    <div class="tb-divider"></div>
+    <div class="tb-group tb-add">
+      <label class="tb-label">Add:</label>
+      <button class="add-btn" data-type="door">+ Door</button>
+      <button class="add-btn" data-type="window">+ Window</button>
+      <button class="add-btn" data-type="whiteboard">+ Whiteboard</button>
+      <button class="add-btn" data-type="softboard">+ Softboard</button>
+      <button class="add-btn" data-type="invigdesk">+ Invig. Desk</button>
+      <button class="add-btn" data-type="seat">+ Seat</button>
+      <button class="add-btn" data-type="table">+ Table</button>
+      <button class="add-btn" data-type="facingdirection">+ Facing Dir.</button>
+      <button class="add-btn" data-type="text">+ Text</button>
+      <button class="add-btn" data-type="box">+ Box</button>
+    </div>
+    <div class="tb-divider"></div>
+    <div class="tb-group">
+      <button id="deleteBtn" class="tb-btn danger" title="Delete selected (Del)">&#128465; Delete</button>
+      <button id="exportPdfBtn" class="tb-btn primary">Export PDF</button>
+    </div>
+  </div>
+
+  <!-- APP LAYOUT -->
+  <div id="appLayout">
+
+    <!-- SIDEBAR -->
+    <aside id="sidebar">
+
+      <!-- Step 1: Mode -->
+      <div id="step-mode" class="sidebar-step active">
+        <div class="sidebar-brand">Exam Seating Planner</div>
+        <p class="step-hint">Choose how to create your seating plan:</p>
+        <button class="mode-btn" data-mode="single">
+          <span class="mode-icon">&#128203;</span>
+          <span>Single Room</span>
+          <small>Enter candidate list manually</small>
+        </button>
+        <button class="mode-btn" data-mode="multiple">
+          <span class="mode-icon">&#128196;</span>
+          <span>Multiple Rooms</span>
+          <small>Import from Excel / CSV</small>
+        </button>
+      </div>
+
+      <!-- Step 2a: Single Room -->
+      <div id="step-single" class="sidebar-step">
+        <div class="step-title">
+          <button class="back-btn" data-step="step-mode">&#8592;</button>
+          Single Room Plan
+        </div>
+        <div class="form-group">
+          <label>School Name</label>
+          <input type="text" id="schoolInput" placeholder="e.g. Billabong High International">
+        </div>
+        <div class="form-group">
+          <label>Exam Series</label>
+          <input type="text" id="examSeriesInput" placeholder="e.g. Oct/Nov 2025">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Room</label>
+            <input type="text" id="roomInput" placeholder="Room 101">
+          </div>
+          <div class="form-group">
+            <label>Paper</label>
+            <input type="text" id="paperInput" placeholder="Paper 1">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Loaded Rooms</label>
+          <select id="singleLoadedRoomSelect">
+            <option value="">-- Select loaded room --</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Syllabus Code</label>
+            <input type="text" id="syllabusInput" placeholder="0500">
+          </div>
+          <div class="form-group">
+            <label>Component</label>
+            <input type="text" id="componentInput" placeholder="22">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Candidate Numbers <span class="hint-text">(one per line)</span></label>
+          <textarea id="candidateTextarea" rows="7" placeholder="0001&#10;0002&#10;0003&#10;0004"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Columns of seats</label>
+            <input type="number" id="colsInput" value="4" min="1" max="12">
+          </div>
+          <div class="form-group">
+            <label>Rows of seats</label>
+            <input type="number" id="rowsInput" value="4" min="1" max="20">
+          </div>
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="manualSeatInput">
+          <span>Manual seat mode</span>
+        </label>
+        <div class="field-note">When enabled, seats added from the toolbar stay where you place them and candidate numbers are filled into those manual seats only.</div>
+        <button id="generateSingleBtn" class="primary-btn">Generate Plan</button>
+      </div>
+
+      <!-- Step 2b: Multiple Rooms -->
+      <div id="step-multiple" class="sidebar-step">
+        <div class="step-title">
+          <button class="back-btn" data-step="step-mode">&#8592;</button>
+          Multiple Rooms
+        </div>
+        <div class="form-group">
+          <label>Room Number</label>
+          <input type="text" id="multiRoomNumberInput" placeholder="Room 101">
+        </div>
+        <div class="form-group">
+          <label>Saved Rooms</label>
+          <select id="multiSavedRoomSelect">
+            <option value="">-- Select saved room --</option>
+          </select>
+        </div>
+        <div class="room-layout-actions compact-actions">
+          <button id="saveRoomLayoutBtn" class="secondary-btn" type="button">Save Room Layout</button>
+          <button id="deleteRoomLayoutBtn" class="secondary-btn" type="button">Delete Room</button>
+          <button id="saveAllRoomLayoutsBtn" class="secondary-btn" type="button">Save All Room Layouts</button>
+          <button id="loadRoomLayoutBtn" class="secondary-btn" type="button">Load Room Layout</button>
+          <input type="file" id="loadLayoutsInput" accept=".json,application/json" hidden>
+        </div>
+        <div class="field-note">Type a new room number to create a layout, or pick a saved room from the dropdown to load it for editing. Load Room Layout imports saved room layouts from JSON.</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Columns of seats</label>
+            <input type="number" id="multiColsInput" value="4" min="1" max="12">
+          </div>
+          <div class="form-group">
+            <label>Rows of seats</label>
+            <input type="number" id="multiRowsInput" value="4" min="1" max="20">
+          </div>
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="multiManualSeatInput">
+          <span>Manual seat mode</span>
+        </label>
+        <div class="field-note">When enabled, each saved room layout uses only the manual seats you place from the toolbar.</div>
+        <button id="previewMultiLayoutsBtn" class="secondary-btn" type="button">View All Rooms</button>
+        <button id="savePreviewEditsBtn" class="secondary-btn" type="button">Save View All Edits</button>
+        <div class="sample-download-bar">
+          <span>Need a template?</span>
+          <a href="#" id="downloadSampleLink">&#11123; Download sample Excel</a>
+        </div>
+        <div class="form-group">
+          <label>Excel / CSV File</label>
+          <input type="file" id="multiFileInput" accept=".xlsx,.xls,.csv">
+        </div>
+        <div class="field-note">Supports both one-candidate-per-row files and sample workbooks with columns like School Name, Exam Title, Room, Syllabus Title, Syllabus Code, Component Code, Candidates, Rows, and Cols.</div>
+        <button id="generateMultiBtn" class="primary-btn" type="button">Generate From Excel</button>
+        <div id="multiSheetRow" class="form-group" style="display:none">
+          <label>Sheet</label>
+          <select id="multiSheetSelect"></select>
+        </div>
+        <div id="multiMappingSection" style="display:none">
+          <div class="section-label">Excel Data</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>School Name</label>
+              <select id="multiSchoolCol"></select>
+            </div>
+            <div class="form-group">
+              <label>Exam Series</label>
+              <select id="multiSeriesCol"></select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Room</label>
+              <select id="multiRoomCol"></select>
+            </div>
+            <div class="form-group">
+              <label>Paper</label>
+              <select id="multiPaperCol"></select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Syllabus Code</label>
+              <select id="multiSyllabusCol"></select>
+            </div>
+            <div class="form-group">
+              <label>Component</label>
+              <select id="multiComponentCol"></select>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Candidate Number</label>
+            <select id="multiCandidateCol"></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Status -->
+      <div id="statusBox" class="status-box"></div>
+
+      <!-- Room navigation (multiple rooms) -->
+      <div id="roomNav" style="display:none">
+        <div class="section-label">Rooms</div>
+        <div id="roomList"></div>
+      </div>
+
+    </aside>
+
+    <!-- CANVAS AREA -->
+    <div id="canvasArea">
+      <div id="emptyHint" class="empty-hint">
+        <div class="empty-icon">&#128203;</div>
+        <div>Choose a plan type from the sidebar to get started.</div>
+      </div>
+      <div id="plannerCanvas"></div>
+    </div>
+
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
