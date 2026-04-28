@@ -2543,40 +2543,537 @@ function downloadSample() {
 // ============================================================
 //  PDF EXPORT
 // ============================================================
+function getPlansForCurrentExport() {
+  if (state.previewPlans.length) return state.previewPlans.filter(Boolean);
+  return [state.plans[state.currentPlanIndex]].filter(Boolean);
+}
+
+function getRelativeRect(node, rootRect) {
+  const rect = node.getBoundingClientRect();
+  return {
+    x: rect.left - rootRect.left,
+    y: rect.top - rootRect.top,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function parsePdfColor(color) {
+  if (!color || color === 'transparent') return null;
+  const value = String(color).trim();
+
+  if (/^#([\da-f]{3}|[\da-f]{6})$/i.test(value)) {
+    const hex = value.slice(1);
+    const expanded = hex.length === 3
+      ? hex.split('').map((part) => part + part).join('')
+      : hex;
+    return {
+      r: parseInt(expanded.slice(0, 2), 16),
+      g: parseInt(expanded.slice(2, 4), 16),
+      b: parseInt(expanded.slice(4, 6), 16),
+    };
+  }
+
+  const rgbMatch = value.match(/^rgba?\(([^)]+)\)$/i);
+  if (!rgbMatch) return null;
+  const parts = rgbMatch[1].split(',').map((part) => Number(part.trim()));
+  if (parts.length < 3 || parts.some((part, index) => index < 3 && !Number.isFinite(part))) {
+    return null;
+  }
+  return { r: parts[0], g: parts[1], b: parts[2] };
+}
+
+function applyPdfStrokeColor(pdf, color) {
+  const rgb = parsePdfColor(color);
+  if (!rgb) return false;
+  pdf.setDrawColor(rgb.r, rgb.g, rgb.b);
+  return true;
+}
+
+function applyPdfFillColor(pdf, color) {
+  const rgb = parsePdfColor(color);
+  if (!rgb) return false;
+  pdf.setFillColor(rgb.r, rgb.g, rgb.b);
+  return true;
+}
+
+function getPdfFontStyle(model = {}) {
+  const isBold = model.fontWeight === 'bold';
+  const isItalic = model.fontStyle === 'italic';
+  if (isBold && isItalic) return 'bolditalic';
+  if (isBold) return 'bold';
+  if (isItalic) return 'italic';
+  return 'normal';
+}
+
+function setPdfTextStyle(pdf, model = {}, fontSize = model.fontSize || 11) {
+  pdf.setFont('helvetica', getPdfFontStyle(model));
+  pdf.setFontSize(fontSize);
+  pdf.setTextColor(0, 0, 0);
+}
+
+function rotatePoint(x, y, centerX, centerY, angle) {
+  if (!angle) return { x, y };
+  const radians = angle * Math.PI / 180;
+  const dx = x - centerX;
+  const dy = y - centerY;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+
+  return {
+    x: centerX + dx * cos - dy * sin,
+    y: centerY + dx * sin + dy * cos,
+  };
+}
+
+function getRectPoints(x, y, width, height) {
+  return [
+    { x, y },
+    { x: x + width, y },
+    { x: x + width, y: y + height },
+    { x, y: y + height },
+  ];
+}
+
+function rotatePoints(points, centerX, centerY, angle) {
+  if (!angle) return points;
+  return points.map((point) => rotatePoint(point.x, point.y, centerX, centerY, angle));
+}
+
+function getPdfPaintMode(hasStroke, hasFill) {
+  if (hasStroke && hasFill) return 'DF';
+  if (hasFill) return 'F';
+  return 'S';
+}
+
+function drawPdfPolygon(pdf, points, options = {}) {
+  if (!points.length) return;
+
+  const {
+    fillColor = null,
+    strokeColor = '#000000',
+    lineWidth = 1,
+    dash = null,
+  } = options;
+
+  const hasFill = applyPdfFillColor(pdf, fillColor);
+  const hasStroke = applyPdfStrokeColor(pdf, strokeColor);
+  pdf.setLineWidth(lineWidth);
+  pdf.setLineDashPattern(dash || [], 0);
+
+  const vectors = [];
+  for (let index = 1; index < points.length; index++) {
+    vectors.push([
+      points[index].x - points[index - 1].x,
+      points[index].y - points[index - 1].y,
+    ]);
+  }
+
+  pdf.lines(vectors, points[0].x, points[0].y, [1, 1], getPdfPaintMode(hasStroke, hasFill), true);
+  pdf.setLineDashPattern([], 0);
+}
+
+function drawPdfRect(pdf, rect, options = {}) {
+  const {
+    angle = 0,
+    rotationCenter = null,
+    fillColor = null,
+    strokeColor = '#000000',
+    lineWidth = 1,
+    dash = null,
+  } = options;
+
+  const center = rotationCenter || {
+    x: rect.x + rect.width / 2,
+    y: rect.y + rect.height / 2,
+  };
+  const points = rotatePoints(getRectPoints(rect.x, rect.y, rect.width, rect.height), center.x, center.y, angle);
+  drawPdfPolygon(pdf, points, { fillColor, strokeColor, lineWidth, dash });
+}
+
+function drawPdfLine(pdf, start, end, options = {}) {
+  const {
+    angle = 0,
+    rotationCenter = null,
+    lineWidth = 1,
+    strokeColor = '#000000',
+    dash = null,
+  } = options;
+
+  const center = rotationCenter || {
+    x: (start.x + end.x) / 2,
+    y: (start.y + end.y) / 2,
+  };
+  const rotatedStart = rotatePoint(start.x, start.y, center.x, center.y, angle);
+  const rotatedEnd = rotatePoint(end.x, end.y, center.x, center.y, angle);
+  applyPdfStrokeColor(pdf, strokeColor);
+  pdf.setLineWidth(lineWidth);
+  pdf.setLineDashPattern(dash || [], 0);
+  pdf.line(rotatedStart.x, rotatedStart.y, rotatedEnd.x, rotatedEnd.y);
+  pdf.setLineDashPattern([], 0);
+}
+
+function drawPdfCenteredText(pdf, text, x, y, model = {}, options = {}) {
+  if (!text) return;
+  const {
+    fontSize = model.fontSize || 11,
+    angle = 0,
+    rotationCenter = { x, y },
+    align = model.textAlign || 'center',
+  } = options;
+
+  setPdfTextStyle(pdf, model, fontSize);
+  const point = rotatePoint(x, y, rotationCenter.x, rotationCenter.y, angle);
+  pdf.text(String(text), point.x, point.y, { align, angle });
+}
+
+function drawPdfTextBlock(pdf, text, rect, model = {}, options = {}) {
+  if (!text) return;
+
+  const {
+    angle = 0,
+    rotationCenter = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
+    paddingX = 4,
+    paddingY = 4,
+    fontSize = model.fontSize || 11,
+    valign = 'middle',
+    noWrap = false,
+    underline = false,
+    lineHeightFactor = 1.18,
+    textAlign = model.textAlign || 'center',
+  } = options;
+
+  setPdfTextStyle(pdf, model, fontSize);
+  const maxWidth = Math.max(8, rect.width - paddingX * 2);
+  const textLines = noWrap
+    ? [String(text)]
+    : pdf.splitTextToSize(String(text), maxWidth).flatMap((line) => Array.isArray(line) ? line : [line]);
+
+  if (!textLines.length) return;
+
+  const lineHeight = fontSize * lineHeightFactor;
+  const totalHeight = Math.max(fontSize, lineHeight * textLines.length);
+  let startY = rect.y + paddingY + fontSize;
+  if (valign === 'middle') {
+    startY = rect.y + (rect.height - totalHeight) / 2 + fontSize;
+  } else if (valign === 'bottom') {
+    startY = rect.y + rect.height - totalHeight + fontSize - paddingY;
+  }
+
+  textLines.forEach((line, index) => {
+    let baseX = rect.x + paddingX;
+    if (textAlign === 'center') baseX = rect.x + rect.width / 2;
+    if (textAlign === 'right') baseX = rect.x + rect.width - paddingX;
+    const baseY = startY + index * lineHeight;
+    const point = rotatePoint(baseX, baseY, rotationCenter.x, rotationCenter.y, angle);
+    pdf.text(line, point.x, point.y, { align: textAlign, angle });
+
+    if (!underline) return;
+    const textWidth = pdf.getTextWidth(line);
+    const startX = textAlign === 'center'
+      ? baseX - textWidth / 2
+      : textAlign === 'right'
+        ? baseX - textWidth
+        : baseX;
+    const underlineStart = rotatePoint(startX, baseY + 1.5, rotationCenter.x, rotationCenter.y, angle);
+    const underlineEnd = rotatePoint(startX + textWidth, baseY + 1.5, rotationCenter.x, rotationCenter.y, angle);
+    pdf.setLineWidth(Math.max(0.75, fontSize * 0.05));
+    pdf.line(underlineStart.x, underlineStart.y, underlineEnd.x, underlineEnd.y);
+  });
+}
+
+function drawHeaderLineToPdf(pdf, docEl, plan, key) {
+  const headerNode = docEl.querySelector(`.header-editable[data-header-key="${key}"]`);
+  if (!headerNode) return;
+
+  const docRect = docEl.getBoundingClientRect();
+  const rect = getRelativeRect(headerNode, docRect);
+  const styles = plan.headerStyles || buildHeaderStyles();
+  const lines = plan.headerLines || buildHeaderLines(plan.meta || {});
+  const model = styles[key] || buildHeaderStyles()[key];
+  const borderWidth = Math.max(0, model.borderWidth || 0);
+
+  if (borderWidth) {
+    drawPdfRect(pdf, rect, {
+      strokeColor: '#000000',
+      lineWidth: borderWidth,
+    });
+  }
+
+  drawPdfTextBlock(pdf, lines[key] || '', rect, model, {
+    paddingX: 4,
+    paddingY: 2,
+    valign: 'middle',
+    underline: key === 'school',
+    noWrap: true,
+    textAlign: model.textAlign || 'center',
+  });
+}
+
+function drawGenericElementToPdf(pdf, element, rect) {
+  const angle = element.rotation || 0;
+  const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  const fillColor = element.type === 'seat' ? '#ffffff' : (element.fillColor ?? getDefaultFillColor(element.type));
+  const borderColor = element.type === 'text' ? '#bbbbbb' : '#000000';
+  const dash = element.borderStyle === 'dashed' ? [4, 3] : null;
+
+  if (element.borderWidth > 0 || fillColor !== 'transparent') {
+    drawPdfRect(pdf, rect, {
+      angle,
+      rotationCenter: center,
+      fillColor,
+      strokeColor: element.borderWidth > 0 ? borderColor : null,
+      lineWidth: Math.max(0.75, element.borderWidth || 0.75),
+      dash,
+    });
+  }
+
+  drawPdfTextBlock(pdf, element.label, rect, element, {
+    angle,
+    rotationCenter: center,
+    paddingX: 4,
+    paddingY: 3,
+    textAlign: element.textAlign || 'center',
+  });
+}
+
+function drawSeatElementToPdf(pdf, element, rect) {
+  const angle = element.rotation || 0;
+  const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  const bodyRect = {
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height * 0.8,
+  };
+  const chairRect = {
+    x: rect.x + rect.width * 0.05,
+    y: rect.y + rect.height * 0.72,
+    width: rect.width * 0.9,
+    height: rect.height * 0.2,
+  };
+
+  drawPdfRect(pdf, bodyRect, {
+    angle,
+    rotationCenter: center,
+    fillColor: element.fillColor ?? '#ffffff',
+    strokeColor: '#000000',
+    lineWidth: 1.5,
+  });
+  drawPdfRect(pdf, chairRect, {
+    angle,
+    rotationCenter: center,
+    fillColor: '#ffffff',
+    strokeColor: '#888888',
+    lineWidth: 1.5,
+  });
+
+  const captionModel = { ...element, fontWeight: 'bold', textAlign: 'center' };
+  drawPdfTextBlock(pdf, 'CANDIDATE', {
+    x: bodyRect.x + 4,
+    y: bodyRect.y + bodyRect.height * 0.16,
+    width: bodyRect.width - 8,
+    height: bodyRect.height * 0.16,
+  }, captionModel, {
+    angle,
+    rotationCenter: center,
+    fontSize: element.fontSize * 0.95,
+    noWrap: true,
+  });
+  drawPdfTextBlock(pdf, 'NUMBER', {
+    x: bodyRect.x + 4,
+    y: bodyRect.y + bodyRect.height * 0.3,
+    width: bodyRect.width - 8,
+    height: bodyRect.height * 0.16,
+  }, captionModel, {
+    angle,
+    rotationCenter: center,
+    fontSize: element.fontSize * 0.95,
+    noWrap: true,
+  });
+  drawPdfTextBlock(pdf, element.label, {
+    x: bodyRect.x + 6,
+    y: bodyRect.y + bodyRect.height * 0.46,
+    width: bodyRect.width - 12,
+    height: bodyRect.height * 0.22,
+  }, { ...element, fontWeight: 'bold', textAlign: 'center' }, {
+    angle,
+    rotationCenter: center,
+    fontSize: element.fontSize * 1.08,
+    noWrap: true,
+  });
+  drawPdfTextBlock(pdf, 'CHAIR', chairRect, { ...element, fontWeight: 'bold', textAlign: 'center' }, {
+    angle,
+    rotationCenter: center,
+    fontSize: element.fontSize * 0.92,
+    noWrap: true,
+  });
+}
+
+function drawSignatureElementToPdf(pdf, element, rect) {
+  const angle = element.rotation || 0;
+  const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  const textRect = {
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: Math.max(16, rect.height - 30),
+  };
+
+  drawPdfTextBlock(pdf, element.label, textRect, { ...element, textAlign: 'left' }, {
+    angle,
+    rotationCenter: center,
+    paddingX: 0,
+    paddingY: 0,
+    valign: 'top',
+    noWrap: true,
+    textAlign: 'left',
+  });
+  drawPdfLine(pdf, {
+    x: rect.x,
+    y: rect.y + rect.height - 1.5,
+  }, {
+    x: rect.x + rect.width,
+    y: rect.y + rect.height - 1.5,
+  }, {
+    angle,
+    rotationCenter: center,
+    lineWidth: 1.5,
+  });
+}
+
+function drawFacingDirectionElementToPdf(pdf, element, rect) {
+  const angle = element.rotation || 0;
+  const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  const arrowTop = rect.y + rect.height * 0.04;
+  const arrowBottom = rect.y + rect.height * 0.4;
+  const arrowX = rect.x + rect.width / 2;
+
+  drawPdfLine(pdf, { x: arrowX, y: arrowTop + 8 }, { x: arrowX, y: arrowBottom }, {
+    angle,
+    rotationCenter: center,
+    lineWidth: 1.5,
+  });
+
+  const headPoints = rotatePoints([
+    { x: arrowX, y: arrowTop },
+    { x: arrowX - 5, y: arrowTop + 8 },
+    { x: arrowX + 5, y: arrowTop + 8 },
+  ], center.x, center.y, angle);
+  drawPdfPolygon(pdf, headPoints, { fillColor: '#000000', strokeColor: '#000000', lineWidth: 1 });
+
+  const characters = String(element.label || '').split('');
+  const charSize = element.fontSize || 11;
+  const totalHeight = characters.length * charSize * 0.95;
+  const startY = rect.y + rect.height * 0.5 + Math.max(0, (rect.height * 0.42 - totalHeight) / 2) + charSize;
+
+  characters.forEach((character, index) => {
+    drawPdfCenteredText(pdf, character, rect.x + rect.width / 2, startY + index * charSize * 0.95, {
+      ...element,
+      fontWeight: element.fontWeight || 'normal',
+    }, {
+      fontSize: charSize,
+      angle,
+      rotationCenter: center,
+      align: 'center',
+    });
+  });
+}
+
+function drawElementToPdf(pdf, docEl, element) {
+  const node = docEl.querySelector(`.plan-element[data-id="${element.id}"]`);
+  if (!node) return;
+
+  const docRect = docEl.getBoundingClientRect();
+  const rect = getRelativeRect(node, docRect);
+
+  if (element.type === 'seat') {
+    drawSeatElementToPdf(pdf, element, rect);
+    return;
+  }
+  if (element.type === 'signature') {
+    drawSignatureElementToPdf(pdf, element, rect);
+    return;
+  }
+  if (element.type === 'facingdirection') {
+    drawFacingDirectionElementToPdf(pdf, element, rect);
+    return;
+  }
+
+  drawGenericElementToPdf(pdf, element, rect);
+}
+
+function drawDocumentToPdf(pdf, docEl, plan) {
+  const docRect = docEl.getBoundingClientRect();
+  const documentStyles = window.getComputedStyle(docEl);
+  const paddingLeft = parseFloat(documentStyles.paddingLeft) || 38;
+  const paddingTop = parseFloat(documentStyles.paddingTop) || 38;
+  const pageBorderRect = {
+    x: paddingLeft,
+    y: paddingTop,
+    width: docRect.width - paddingLeft * 2,
+    height: docRect.height - paddingTop * 2,
+  };
+
+  pdf.setFillColor(255, 255, 255);
+  pdf.rect(0, 0, docRect.width, docRect.height, 'F');
+  drawPdfRect(pdf, pageBorderRect, { strokeColor: '#000000', lineWidth: 1.5 });
+
+  ['school', 'examSeries', 'paper', 'roomNumber', 'syllabusCode', 'componentCode']
+    .forEach((key) => drawHeaderLineToPdf(pdf, docEl, plan, key));
+
+  const classroomNode = docEl.querySelector('.classroom-shell');
+  if (classroomNode) {
+    const classroomRect = getRelativeRect(classroomNode, docRect);
+    drawPdfRect(pdf, classroomRect, { fillColor: '#ffffff', strokeColor: '#000000', lineWidth: 2 });
+  }
+
+  plan.elements
+    .filter((element) => element.region !== 'footer')
+    .forEach((element) => drawElementToPdf(pdf, docEl, element));
+
+  plan.elements
+    .filter((element) => element.region === 'footer')
+    .forEach((element) => drawElementToPdf(pdf, docEl, element));
+}
+
 async function exportToPdf() {
   const docEls = Array.from(document.querySelectorAll('.exam-document'));
   if (!docEls.length) { setStatus('Generate a plan first.'); return; }
-  setStatus('Preparing PDF export…');
+  const exportPlans = getPlansForCurrentExport();
+  setStatus('Preparing editable PDF export…');
 
   // Temporarily hide selection UI
   const selectedNodes = Array.from(document.querySelectorAll('.plan-element.selected'));
   selectedNodes.forEach((node) => node.classList.remove('selected'));
 
   try {
-    const canvases = [];
-    for (const docEl of docEls) {
-      canvases.push(await html2canvas(docEl, {
-        scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false,
-      }));
-    }
-
-    const [firstCanvas, ...remainingCanvases] = canvases;
-    const firstOrient = firstCanvas.width > firstCanvas.height ? 'landscape' : 'portrait';
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation: firstOrient, unit: 'px', format: [firstCanvas.width, firstCanvas.height] });
-    pdf.addImage(firstCanvas.toDataURL('image/png'), 'PNG', 0, 0, firstCanvas.width, firstCanvas.height);
-
-    remainingCanvases.forEach((canvas) => {
-      const orient = canvas.width > canvas.height ? 'landscape' : 'portrait';
-      pdf.addPage([canvas.width, canvas.height], orient);
-      pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, canvas.width, canvas.height);
+    const firstRect = docEls[0].getBoundingClientRect();
+    const firstOrient = firstRect.width > firstRect.height ? 'landscape' : 'portrait';
+    const pdf = new jsPDF({
+      orientation: firstOrient,
+      unit: 'px',
+      format: [firstRect.width, firstRect.height],
+      compress: true,
     });
 
-    pdf.save('exam-seating-plan.pdf');
-    setStatus(`PDF saved as exam-seating-plan.pdf${docEls.length > 1 ? ` with ${docEls.length} pages` : ''}.`);
+    docEls.forEach((docEl, index) => {
+      const rect = docEl.getBoundingClientRect();
+      const plan = exportPlans[index] || exportPlans[0];
+      if (index > 0) {
+        const orient = rect.width > rect.height ? 'landscape' : 'portrait';
+        pdf.addPage([rect.width, rect.height], orient);
+      }
+      drawDocumentToPdf(pdf, docEl, plan);
+    });
+
+    const fileName = 'exam-seating-plan-editable.pdf';
+    pdf.save(fileName);
+    setStatus(`Editable PDF saved as ${fileName}${docEls.length > 1 ? ` with ${docEls.length} pages` : ''}.`);
   } catch (err) {
     console.error(err);
-    setStatus('PDF export failed. Check console for details.');
+    setStatus('Editable PDF export failed. Check console for details.');
   } finally {
     selectedNodes.forEach((node) => node.classList.add('selected'));
   }
