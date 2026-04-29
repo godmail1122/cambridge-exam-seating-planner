@@ -24,7 +24,7 @@ The app tries to auto-detect these headers, but you can change the mapping manua
 
 ## Sample file
 
-The repository includes [Seating_Plan_ALevel.xlsx](Seating_Plan_ALevel.xlsx) as the bundled sample workbook used by the in-app sample download link.
+The repository includes [seating_plan_template.xlsx](seating_plan_template.xlsx) as the bundled sample workbook used by the in-app sample download link.
 
 ## Local use
 

@@ -2855,8 +2855,8 @@ function slugifyFilePart(value) {
 // ============================================================
 function downloadSample() {
   const a = document.createElement('a');
-  a.href = new URL('Seating_Plan_ALevel.xlsx', window.location.href).href;
-  a.download = 'Seating_Plan_ALevel.xlsx';
+  a.href = new URL('seating_plan_template.xlsx', window.location.href).href;
+  a.download = 'seating_plan_template.xlsx';
   document.body.appendChild(a); a.click(); a.remove();
 }
 
