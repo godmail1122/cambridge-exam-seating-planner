@@ -7,75 +7,6 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-
-  <!-- TOP TOOLBAR -->
-  <div id="toolbar">
-    <div class="tb-group tb-format">
-      <label class="tb-label">Format:</label>
-      <select id="fontSizeSelect" title="Font size">
-        <option value="9">9</option>
-        <option value="10">10</option>
-        <option value="11" selected>11</option>
-        <option value="12">12</option>
-        <option value="14">14</option>
-        <option value="16">16</option>
-        <option value="18">18</option>
-      </select>
-      <button id="boldBtn" class="tb-btn" title="Bold"><b>B</b></button>
-      <button id="italicBtn" class="tb-btn" title="Italic"><i>I</i></button>
-      <button id="alignLeftBtn" class="tb-btn" title="Align left">&#8676;</button>
-      <button id="alignCenterBtn" class="tb-btn" title="Center">&#8801;</button>
-      <button id="alignRightBtn" class="tb-btn" title="Align right">&#8677;</button>
-    </div>
-    <div class="tb-divider"></div>
-    <div class="tb-group">
-      <label class="tb-label">Border:</label>
-      <input id="borderWidthInput" type="number" value="1" min="0" max="10" title="Border width (px)" style="width:44px;height:26px;border:1px solid #ccc;border-radius:3px;padding:0 4px;font-size:12px;">
-      <span style="font-size:11px;color:#666;">px</span>
-    </div>
-    <div class="tb-divider"></div>
-    <div class="tb-group">
-      <label class="tb-label">Fill:</label>
-      <input id="fillColorInput" type="color" value="#ffffff" title="Fill color" style="width:34px;height:26px;border:1px solid #ccc;border-radius:3px;padding:1px;background:#fff;cursor:pointer;">
-      <button id="clearFillBtn" class="tb-btn" title="Clear fill">No Fill</button>
-    </div>
-    <div class="tb-divider"></div>
-    <div class="tb-group">
-      <button id="undoBtn" class="tb-btn" title="Undo (Ctrl+Z)">&#8630; Undo</button>
-      <button id="redoBtn" class="tb-btn" title="Redo (Ctrl+Y)">&#8631; Redo</button>
-    </div>
-    <div class="tb-divider"></div>
-    <div class="tb-group">
-      <button id="cutBtn" class="tb-btn" title="Cut (Ctrl+X)">&#9986; Cut</button>
-      <button id="copyBtn" class="tb-btn" title="Copy (Ctrl+C)">&#128203; Copy</button>
-      <button id="pasteBtn" class="tb-btn" title="Paste (Ctrl+V)">&#128196; Paste</button>
-    </div>
-    <div class="tb-divider"></div>
-    <div class="tb-group">
-      <button id="sendToBackBtn" class="tb-btn" title="Send selected object to back">Send To Back</button>
-      <button id="bringToFrontBtn" class="tb-btn" title="Bring selected object to front">Bring To Front</button>
-    </div>
-    <div class="tb-divider"></div>
-    <div class="tb-group tb-add">
-      <label class="tb-label">Add:</label>
-      <button class="add-btn" data-type="door">+ Door</button>
-      <button class="add-btn" data-type="window">+ Window</button>
-      <button class="add-btn" data-type="whiteboard">+ Whiteboard</button>
-      <button class="add-btn" data-type="softboard">+ Softboard</button>
-      <button class="add-btn" data-type="invigdesk">+ Invig. Desk</button>
-      <button class="add-btn" data-type="seat">+ Seat</button>
-      <button class="add-btn" data-type="table">+ Table</button>
-      <button class="add-btn" data-type="facingdirection">+ Facing Dir.</button>
-      <button class="add-btn" data-type="text">+ Text</button>
-      <button class="add-btn" data-type="box">+ Box</button>
-    </div>
-    <div class="tb-divider"></div>
-    <div class="tb-group">
-      <button id="deleteBtn" class="tb-btn danger" title="Delete selected (Del)">&#128465; Delete</button>
-      <button id="exportPdfBtn" class="tb-btn primary">Export PDF</button>
-    </div>
-  </div>
-
   <!-- APP LAYOUT -->
   <div id="appLayout">
 
@@ -128,6 +59,7 @@
             <option value="">-- Select loaded room --</option>
           </select>
         </div>
+        <button id="updateSingleLayoutBtn" class="secondary-btn" type="button">Update Layout</button>
         <div class="form-row">
           <div class="form-group">
             <label>Syllabus Code</label>
@@ -265,13 +197,85 @@
 
     </aside>
 
-    <!-- CANVAS AREA -->
-    <div id="canvasArea">
-      <div id="emptyHint" class="empty-hint">
-        <div class="empty-icon">&#128203;</div>
-        <div>Choose a plan type from the sidebar to get started.</div>
+    <div id="workspace">
+
+      <!-- TOP TOOLBAR -->
+      <div id="toolbar">
+        <div class="tb-group tb-format">
+          <label class="tb-label">Format:</label>
+          <select id="fontSizeSelect" title="Font size">
+            <option value="9">9</option>
+            <option value="10">10</option>
+            <option value="11" selected>11</option>
+            <option value="12">12</option>
+            <option value="14">14</option>
+            <option value="16">16</option>
+            <option value="18">18</option>
+          </select>
+          <button id="boldBtn" class="tb-btn" title="Bold"><b>B</b></button>
+          <button id="italicBtn" class="tb-btn" title="Italic"><i>I</i></button>
+          <button id="alignLeftBtn" class="tb-btn" title="Align left">&#8676;</button>
+          <button id="alignCenterBtn" class="tb-btn" title="Center">&#8801;</button>
+          <button id="alignRightBtn" class="tb-btn" title="Align right">&#8677;</button>
+        </div>
+        <div class="tb-divider"></div>
+        <div class="tb-group">
+          <label class="tb-label">Border:</label>
+          <input id="borderWidthInput" type="number" value="1" min="0" max="10" title="Border width (px)" style="width:44px;height:26px;border:1px solid #ccc;border-radius:3px;padding:0 4px;font-size:12px;">
+          <span style="font-size:11px;color:#666;">px</span>
+        </div>
+        <div class="tb-divider"></div>
+        <div class="tb-group">
+          <label class="tb-label">Fill:</label>
+          <input id="fillColorInput" type="color" value="#ffffff" title="Fill color" style="width:34px;height:26px;border:1px solid #ccc;border-radius:3px;padding:1px;background:#fff;cursor:pointer;">
+          <button id="clearFillBtn" class="tb-btn" title="Clear fill">No Fill</button>
+        </div>
+        <div class="tb-divider"></div>
+        <div class="tb-group">
+          <button id="undoBtn" class="tb-btn" title="Undo (Ctrl+Z)">&#8630; Undo</button>
+          <button id="redoBtn" class="tb-btn" title="Redo (Ctrl+Y)">&#8631; Redo</button>
+        </div>
+        <div class="tb-divider"></div>
+        <div class="tb-group">
+          <button id="cutBtn" class="tb-btn" title="Cut (Ctrl+X)">&#9986; Cut</button>
+          <button id="copyBtn" class="tb-btn" title="Copy (Ctrl+C)">&#128203; Copy</button>
+          <button id="pasteBtn" class="tb-btn" title="Paste (Ctrl+V)">&#128196; Paste</button>
+        </div>
+        <div class="tb-divider"></div>
+        <div class="tb-group">
+          <button id="sendToBackBtn" class="tb-btn" title="Send selected object to back">Send To Back</button>
+          <button id="bringToFrontBtn" class="tb-btn" title="Bring selected object to front">Bring To Front</button>
+        </div>
+        <div class="tb-divider"></div>
+        <div class="tb-group tb-add">
+          <label class="tb-label">Add:</label>
+          <button class="add-btn" data-type="door">+ Door</button>
+          <button class="add-btn" data-type="window">+ Window</button>
+          <button class="add-btn" data-type="whiteboard">+ Whiteboard</button>
+          <button class="add-btn" data-type="softboard">+ Softboard</button>
+          <button class="add-btn" data-type="invigdesk">+ Invig. Desk</button>
+          <button class="add-btn" data-type="seat">+ Seat</button>
+          <button class="add-btn" data-type="table">+ Table</button>
+          <button class="add-btn" data-type="facingdirection">+ Facing Dir.</button>
+          <button class="add-btn" data-type="text">+ Text</button>
+          <button class="add-btn" data-type="box">+ Box</button>
+        </div>
+        <div class="tb-divider"></div>
+        <div class="tb-group">
+          <button id="deleteBtn" class="tb-btn danger" title="Delete selected (Del)">&#128465; Delete</button>
+          <button id="exportPdfBtn" class="tb-btn primary">Export PDF</button>
+        </div>
       </div>
-      <div id="plannerCanvas"></div>
+
+      <!-- CANVAS AREA -->
+      <div id="canvasArea">
+        <div id="emptyHint" class="empty-hint">
+          <div class="empty-icon">&#128203;</div>
+          <div>Choose a plan type from the sidebar to get started.</div>
+        </div>
+        <div id="plannerCanvas"></div>
+      </div>
+
     </div>
 
   </div>

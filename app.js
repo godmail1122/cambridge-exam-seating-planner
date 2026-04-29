@@ -17,6 +17,7 @@ const state = {
   multiRows: [],
   previewEditable: false,
   previewMode: null,
+  canvasZoom: 1,
   clipboard: null,
   history: { stack: [], pointer: -1 },
 };
@@ -33,9 +34,11 @@ const BROWSER_LAYOUTS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 document.addEventListener('DOMContentLoaded', () => {
   bindSidebarEvents();
   bindToolbarEvents();
+  setupCanvasViewportEvents();
   restoreBrowserSavedLayouts();
   updateLayoutActionState();
   document.addEventListener('keydown', onKeyDown);
+  window.addEventListener('resize', syncCanvasZoom);
 });
 
 // ============================================================
@@ -182,6 +185,7 @@ function bindSidebarEvents() {
   );
   document.getElementById('generateSingleBtn').addEventListener('click', generateSingle);
   document.getElementById('singleLoadedRoomSelect').addEventListener('change', loadSingleLoadedRoom);
+  document.getElementById('updateSingleLayoutBtn').addEventListener('click', saveSingleRoomLayout);
   document.getElementById('multiFileInput').addEventListener('change', handleMultiFile);
   document.getElementById('multiSheetSelect').addEventListener('change', () =>
     loadMultiSheet(document.getElementById('multiSheetSelect').value)
@@ -274,6 +278,15 @@ function syncSingleInputsFromPlan(plan) {
   document.getElementById('manualSeatInput').checked = !!plan.seatingConfig?.manualSeatMode;
 }
 
+function syncSingleInputsFromRoomLayout(plan) {
+  if (!plan) return;
+  const meta = plan.meta || {};
+  document.getElementById('roomInput').value = meta.room || '';
+  document.getElementById('colsInput').value = String(Math.max(1, Number(plan.seatingConfig?.columns) || 4));
+  document.getElementById('rowsInput').value = String(Math.max(1, Number(plan.seatingConfig?.rows) || 4));
+  document.getElementById('manualSeatInput').checked = !!plan.seatingConfig?.manualSeatMode;
+}
+
 function updateSingleLoadedRoomSelect() {
   const select = document.getElementById('singleLoadedRoomSelect');
   if (!select) return;
@@ -299,9 +312,9 @@ function loadSingleLoadedRoom() {
 
   state.singlePlan = normalizeLoadedPlan(sourcePlan);
   state.idCounter = Math.max(state.idCounter, getMaxElementId([state.singlePlan]));
-  syncSingleInputsFromPlan(state.singlePlan);
+  syncSingleInputsFromRoomLayout(state.singlePlan);
   activateSinglePlanView();
-  setStatus(`Loaded ${roomName} into Single Room.`);
+  setStatus(`Loaded room layout for ${roomName} into Single Room.`);
 }
 
 function updateSavedRoomSelect() {
@@ -350,16 +363,112 @@ function loadSelectedSavedRoom() {
   setStatus(`Loaded room layout for ${roomName}.`);
 }
 
+function getSavedRoomLayout(roomName) {
+  const normalizedRoomName = String(roomName || '').trim();
+  if (!normalizedRoomName) return null;
+
+  const sourcePlan = state.multiRoomLayouts.find(
+    (plan) => String(plan?.meta?.room || '').trim() === normalizedRoomName
+  );
+  return sourcePlan ? normalizeLoadedPlan(sourcePlan) : null;
+}
+
+function buildRoomLayoutTemplate(plan, roomName) {
+  if (!plan) return null;
+
+  const normalizedPlan = normalizeLoadedPlan(plan);
+  const normalizedRoomName = String(roomName || normalizedPlan.meta?.room || '').trim() || 'Room';
+  const classroom = normalizedPlan.classroom
+    ? { ...normalizedPlan.classroom }
+    : { width: 690, height: 740 };
+
+  return {
+    meta: { room: normalizedRoomName },
+    headerLines: buildHeaderLines({ room: normalizedRoomName }),
+    headerStyles: normalizedPlan.headerStyles
+      ? JSON.parse(JSON.stringify(normalizedPlan.headerStyles))
+      : buildHeaderStyles(),
+    classroom,
+    seatingConfig: {
+      candidates: [],
+      columns: Math.max(1, Number(normalizedPlan.seatingConfig?.columns) || 4),
+      rows: Math.max(1, Number(normalizedPlan.seatingConfig?.rows) || 4),
+      manualSeatMode: !!normalizedPlan.seatingConfig?.manualSeatMode,
+    },
+    seatingArea: normalizedPlan.seatingArea
+      ? { ...normalizedPlan.seatingArea }
+      : buildInitialSeatingArea(classroom),
+    elements: buildPersistentLayout(normalizedPlan).map((element) => (
+      element.type === 'seat' && element.manualSeat
+        ? { ...element, label: '' }
+        : element
+    )),
+  };
+}
+
+function getSingleRoomTemplate(roomName) {
+  const normalizedRoomName = String(roomName || '').trim();
+  const currentPlanRoom = String(state.singlePlan?.meta?.room || '').trim();
+  if (normalizedRoomName && currentPlanRoom === normalizedRoomName) {
+    return state.singlePlan;
+  }
+  return getSavedRoomLayout(normalizedRoomName);
+}
+
+function upsertSingleRoomLayout(plan) {
+  const roomName = document.getElementById('roomInput')?.value.trim() || '';
+  if (!roomName) {
+    return { ok: false, reason: 'missing-room' };
+  }
+  if (!plan) {
+    return { ok: false, reason: 'missing-plan' };
+  }
+
+  const savedPlan = buildRoomLayoutTemplate(plan, roomName);
+  if (!savedPlan) {
+    return { ok: false, reason: 'missing-plan' };
+  }
+
+  const existingIndex = state.multiRoomLayouts.findIndex(
+    (entry) => String(entry?.meta?.room || '').trim() === roomName
+  );
+
+  if (existingIndex >= 0) {
+    state.multiRoomLayouts[existingIndex] = savedPlan;
+  } else {
+    state.multiRoomLayouts.push(savedPlan);
+  }
+
+  updateSavedRoomSelect();
+  updateSingleLoadedRoomSelect();
+  persistBrowserSavedLayouts();
+
+  return {
+    ok: true,
+    action: existingIndex >= 0 ? 'updated' : 'added',
+    roomName,
+  };
+}
+
+function saveSingleRoomLayout() {
+  if (!state.singlePlan) {
+    setStatus('Generate or load a single-room plan first.');
+    return;
+  }
+
+  const result = upsertSingleRoomLayout(state.singlePlan);
+  if (!result.ok) {
+    setStatus('Enter a room number first.');
+    return;
+  }
+
+  setStatus(`${result.action === 'updated' ? 'Updated' : 'Saved'} room layout for ${result.roomName}.`);
+}
+
 // ============================================================
 //  SINGLE ROOM
 // ============================================================
 function generateSingle() {
-  const previousPlan = state.singlePlan || null;
-  const manualSeatMode = !!document.getElementById('manualSeatInput')?.checked;
-  const candidates = document.getElementById('candidateTextarea').value
-    .split('\n').map((s) => normalizeCandidateNumber(s)).filter(Boolean);
-  if (!candidates.length) { setStatus('Enter at least one candidate number.'); return; }
-
   const meta = {
     school: document.getElementById('schoolInput').value.trim() || 'School Name',
     examSeries: document.getElementById('examSeriesInput').value.trim() || 'Exam Series',
@@ -368,6 +477,11 @@ function generateSingle() {
     syllabusCode: document.getElementById('syllabusInput').value.trim() || '',
     componentCode: document.getElementById('componentInput').value.trim() || '',
   };
+  const previousPlan = getSingleRoomTemplate(meta.room);
+  const manualSeatMode = !!document.getElementById('manualSeatInput')?.checked;
+  const candidates = document.getElementById('candidateTextarea').value
+    .split('\n').map((s) => normalizeCandidateNumber(s)).filter(Boolean);
+  if (!candidates.length) { setStatus('Enter at least one candidate number.'); return; }
 
   const cols = Math.max(1, parseInt(document.getElementById('colsInput').value, 10) || 4);
   const rows = Math.max(1, parseInt(document.getElementById('rowsInput').value, 10) || 4);
@@ -390,18 +504,26 @@ function generateSingle() {
   state.previewMode = null;
   state.currentPlanIndex = 0;
   renderCurrentPlan();
+  const saveResult = upsertSingleRoomLayout(plan);
   pushHistory();
   document.getElementById('roomNav').style.display = 'none';
   if (manualSeatMode) {
     const manualSeatCount = getOrderedManualSeats(plan.elements).length;
+    const layoutMessage = saveResult.ok
+      ? ` ${saveResult.action === 'updated' ? 'Updated' : 'Saved'} room layout for ${saveResult.roomName}.`
+      : ' Enter a room number to save this layout.';
     setStatus(
       manualSeatCount
-        ? `Manual seat mode active. Filled ${Math.min(candidates.length, manualSeatCount)} manual seat(s).`
-        : 'Manual seat mode active. Add seats from the toolbar, place them, then generate again to fill candidate numbers.'
+        ? `Manual seat mode active. Filled ${Math.min(candidates.length, manualSeatCount)} manual seat(s).${layoutMessage}`
+        : `Manual seat mode active. Add seats from the toolbar, place them, then generate again to fill candidate numbers.${layoutMessage}`
     );
     return;
   }
-  setStatus(`Plan generated with ${candidates.length} seat(s).`);
+  setStatus(
+    saveResult.ok
+      ? `Plan generated with ${candidates.length} seat(s). ${saveResult.action === 'updated' ? 'Updated' : 'Saved'} room layout for ${saveResult.roomName}.`
+      : `Plan generated with ${candidates.length} seat(s). Enter a room number to save this layout.`
+  );
 }
 
 // ============================================================
@@ -514,6 +636,8 @@ function buildImportedPlanEntries(cols) {
           candidates,
           rows: getImportedSeatCount(cols.rows ? row[cols.rows] : '', Math.ceil(candidates.length / 4) || 1),
           columns: getImportedSeatCount(cols.cols ? row[cols.cols] : '', Math.min(4, Math.max(1, candidates.length))),
+          hasExplicitRows: !!cols.rows,
+          hasExplicitColumns: !!cols.cols,
           requiresTemplate: false,
           sourceLabel: `${meta.room}${meta.paper ? ` / ${meta.paper}` : ''}`,
         };
@@ -543,6 +667,8 @@ function buildImportedPlanEntries(cols) {
       candidates: rows.map((entry) => normalizeCandidateNumber(entry[cols.candidate])).filter(Boolean),
       rows: null,
       columns: null,
+      hasExplicitRows: false,
+      hasExplicitColumns: false,
       requiresTemplate: true,
       sourceLabel: roomName,
     };
@@ -589,8 +715,13 @@ function generateMultiple() {
 
     const seatingConfig = template.seatingConfig || {};
     const manualSeatMode = !!seatingConfig.manualSeatMode;
-    const seatsPerRow = Math.max(1, Number(seatingConfig.columns) || 4);
-    const rowCount = Math.max(1, Number(seatingConfig.rows) || 4);
+    const importedGrid = getImportedGrid(entry, 4, 1);
+    const seatsPerRow = entry.hasExplicitColumns
+      ? importedGrid.columns
+      : Math.max(1, Number(seatingConfig.columns) || importedGrid.columns);
+    const rowCount = entry.hasExplicitRows
+      ? importedGrid.rows
+      : Math.max(1, Number(seatingConfig.rows) || importedGrid.rows);
     const manualSeatCount = getOrderedManualSeats(template.elements || []).length;
 
     if (!manualSeatMode && !canFitSeatGrid(entry.candidates.length, seatsPerRow, rowCount)) {
@@ -609,8 +740,12 @@ function generateMultiple() {
     const template = templatesByRoom.get(entry.roomName);
     const seatingConfig = template?.seatingConfig || {};
     const importedGrid = getImportedGrid(entry, 4, 1);
-    const seatsPerRow = Math.max(1, Number(seatingConfig.columns) || importedGrid.columns);
-    const rowCount = Math.max(1, Number(seatingConfig.rows) || importedGrid.rows);
+    const seatsPerRow = entry.hasExplicitColumns
+      ? importedGrid.columns
+      : Math.max(1, Number(seatingConfig.columns) || importedGrid.columns);
+    const rowCount = entry.hasExplicitRows
+      ? importedGrid.rows
+      : Math.max(1, Number(seatingConfig.rows) || importedGrid.rows);
     generatedPlans.push(
       buildPlan(
         entry.meta,
@@ -1084,6 +1219,126 @@ function getDefaultFillColor(type) {
   return type === 'seat' ? '#ffffff' : 'transparent';
 }
 
+function wrapPlannerCanvasHtml(content = '') {
+  return `<div class="planner-canvas-inner">${content}</div>`;
+}
+
+function getPlannerCanvasInner() {
+  return document.querySelector('#plannerCanvas .planner-canvas-inner');
+}
+
+function getTouchDistance(touches) {
+  if (!touches || touches.length < 2) return 0;
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.hypot(dx, dy);
+}
+
+function getTouchCenter(touches, rect) {
+  return {
+    x: ((touches[0].clientX + touches[1].clientX) / 2) - rect.left,
+    y: ((touches[0].clientY + touches[1].clientY) / 2) - rect.top,
+  };
+}
+
+function syncCanvasZoom() {
+  const canvas = document.getElementById('plannerCanvas');
+  const inner = getPlannerCanvasInner();
+  if (!canvas) return;
+
+  if (!inner || !inner.children.length) {
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    return;
+  }
+
+  const zoom = clamp(state.canvasZoom || 1, 0.6, 2.5);
+  state.canvasZoom = zoom;
+  inner.style.transform = `scale(${zoom})`;
+  inner.style.transformOrigin = 'top left';
+
+  const baseWidth = Math.max(inner.scrollWidth, inner.offsetWidth, 1);
+  const baseHeight = Math.max(inner.scrollHeight, inner.offsetHeight, 1);
+  canvas.style.width = `${Math.ceil(baseWidth * zoom)}px`;
+  canvas.style.height = `${Math.ceil(baseHeight * zoom)}px`;
+}
+
+function setCanvasZoom(nextZoom, anchor = null) {
+  const canvasArea = document.getElementById('canvasArea');
+  const previousZoom = state.canvasZoom || 1;
+  const clampedZoom = clamp(nextZoom, 0.6, 2.5);
+  if (Math.abs(clampedZoom - previousZoom) < 0.001) return;
+
+  state.canvasZoom = clampedZoom;
+
+  let unscaledFocus = null;
+  if (canvasArea && anchor) {
+    unscaledFocus = {
+      x: (canvasArea.scrollLeft + anchor.x) / previousZoom,
+      y: (canvasArea.scrollTop + anchor.y) / previousZoom,
+    };
+  }
+
+  syncCanvasZoom();
+
+  if (canvasArea && unscaledFocus) {
+    canvasArea.scrollLeft = Math.max(0, unscaledFocus.x * clampedZoom - anchor.x);
+    canvasArea.scrollTop = Math.max(0, unscaledFocus.y * clampedZoom - anchor.y);
+  }
+}
+
+function setupCanvasViewportEvents() {
+  const canvasArea = document.getElementById('canvasArea');
+  if (!canvasArea) return;
+
+  let pinchState = null;
+
+  canvasArea.addEventListener('touchstart', (event) => {
+    if (event.touches.length !== 2 || !getPlannerCanvasInner()?.children.length) return;
+    const areaRect = canvasArea.getBoundingClientRect();
+    pinchState = {
+      distance: getTouchDistance(event.touches),
+      zoom: state.canvasZoom || 1,
+      center: getTouchCenter(event.touches, areaRect),
+    };
+    event.preventDefault();
+  }, { passive: false });
+
+  canvasArea.addEventListener('touchmove', (event) => {
+    if (!pinchState || event.touches.length !== 2) return;
+    const areaRect = canvasArea.getBoundingClientRect();
+    const nextDistance = getTouchDistance(event.touches);
+    if (!nextDistance || !pinchState.distance) return;
+    const nextCenter = getTouchCenter(event.touches, areaRect);
+    setCanvasZoom(pinchState.zoom * (nextDistance / pinchState.distance), nextCenter);
+    pinchState.center = nextCenter;
+    event.preventDefault();
+  }, { passive: false });
+
+  const clearPinchState = () => {
+    pinchState = null;
+  };
+
+  canvasArea.addEventListener('touchend', (event) => {
+    if (event.touches.length < 2) clearPinchState();
+  }, { passive: true });
+  canvasArea.addEventListener('touchcancel', clearPinchState, { passive: true });
+}
+
+function setupOutsidePageDeselection(plan, root = document) {
+  root.addEventListener('pointerdown', (event) => {
+    if (event.target.closest('.plan-element, .header-editable, .rh, .rh-rotate, .resize-handle, .seat-width-ruler-preview, .seat-height-ruler-preview')) {
+      return;
+    }
+
+    const insideDocument = event.target.closest('.exam-document');
+    const insideSafeArea = event.target.closest('.page-safe-area');
+    if (!insideDocument || !insideSafeArea) {
+      selectElement(null, plan);
+    }
+  }, true);
+}
+
 // ============================================================
 //  RENDER
 // ============================================================
@@ -1094,10 +1349,11 @@ function renderCurrentPlan() {
   if (state.previewPlans.length) {
     state.selectedId = null;
     state.selectedHeaderKey = null;
-    canvas.innerHTML = state.previewPlans
+    canvas.innerHTML = wrapPlannerCanvasHtml(state.previewPlans
       .map((plan, index) => `<div class="all-plan-preview-item" data-preview-index="${index}">${buildDocumentHtml(plan)}</div>`)
-      .join('');
-    canvas.querySelectorAll('.all-plan-preview-item').forEach((item, index) => {
+      .join(''));
+    const inner = getPlannerCanvasInner();
+    inner.querySelectorAll('.all-plan-preview-item').forEach((item, index) => {
       setupPlanInteractions(state.previewPlans[index], item, {
         editable: state.previewEditable,
         onActivate: state.previewEditable
@@ -1106,6 +1362,7 @@ function renderCurrentPlan() {
       });
     });
     emptyHint.style.display = 'none';
+    syncCanvasZoom();
     return;
   }
 
@@ -1115,6 +1372,7 @@ function renderCurrentPlan() {
     state.selectedHeaderKey = null;
     canvas.innerHTML = '';
     emptyHint.style.display = '';
+    syncCanvasZoom();
     return;
   }
 
@@ -1126,9 +1384,10 @@ function renderCurrentPlan() {
   if (!plan.headerLines) {
     plan.headerLines = buildHeaderLines(plan.meta || {});
   }
-  canvas.innerHTML = buildDocumentHtml(plan);
+  canvas.innerHTML = wrapPlannerCanvasHtml(buildDocumentHtml(plan));
   emptyHint.style.display = 'none';
-  setupPlanInteractions(plan, canvas, { editable: true });
+  setupPlanInteractions(plan, getPlannerCanvasInner(), { editable: true });
+  syncCanvasZoom();
 }
 
 function activatePreviewRoom(index) {
@@ -1316,6 +1575,7 @@ function setupPlanInteractions(plan, root = document, options = {}) {
   if (!content || !shell || !slot) return;
 
   clampClassroomToSlot(shell, slot, plan);
+  setupOutsidePageDeselection(plan, root);
 
   if (typeof onActivate === 'function') {
     root.addEventListener('pointerdown', onActivate, true);
@@ -1376,10 +1636,20 @@ function setupSeatWidthRuler(plan, ruler, content, heightRuler, root = document)
       event.preventDefault();
       event.stopPropagation();
 
+      if (typeof handle.setPointerCapture === 'function') {
+        try {
+          handle.setPointerCapture(event.pointerId);
+        } catch (error) {
+          // Ignore capture errors from synthetic/non-capturable pointers.
+        }
+      }
+
       const handleType = handle.dataset.seatRulerHandle;
       const minSpanPx = Math.round(SEAT_LAYOUT_MIN_SPAN_CM * SEAT_LAYOUT_PIXELS_PER_CM);
+      const activePointerId = event.pointerId;
 
       const onMove = (moveEvent) => {
+        if (moveEvent.pointerId !== activePointerId) return;
         const rulerRect = ruler.getBoundingClientRect();
         const metrics = getSeatAreaMetrics(plan.classroom, plan.seatingArea);
         const pointerX = clamp(moveEvent.clientX - rulerRect.left, metrics.sideMarginPx, plan.classroom.width - metrics.sideMarginPx);
@@ -1395,14 +1665,34 @@ function setupSeatWidthRuler(plan, ruler, content, heightRuler, root = document)
         relayoutSeats(plan, content, ruler, heightRuler, root);
       };
 
-      const onUp = () => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
+      const cleanup = () => {
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onUp);
+        handle.removeEventListener('lostpointercapture', onLostPointerCapture);
+        if (typeof handle.releasePointerCapture === 'function' && handle.hasPointerCapture?.(activePointerId)) {
+          try {
+            handle.releasePointerCapture(activePointerId);
+          } catch (error) {
+            // Ignore capture release errors once the pointer lifecycle is complete.
+          }
+        }
+      };
+
+      const onUp = (upEvent) => {
+        if (upEvent.pointerId !== activePointerId) return;
+        cleanup();
         pushHistory();
       };
 
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp, { once: true });
+      const onLostPointerCapture = () => {
+        cleanup();
+      };
+
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onUp);
+      handle.addEventListener('lostpointercapture', onLostPointerCapture);
     });
   });
 }
@@ -1413,10 +1703,20 @@ function setupSeatHeightRuler(plan, ruler, content, widthRuler, root = document)
       event.preventDefault();
       event.stopPropagation();
 
+      if (typeof handle.setPointerCapture === 'function') {
+        try {
+          handle.setPointerCapture(event.pointerId);
+        } catch (error) {
+          // Ignore capture errors from synthetic/non-capturable pointers.
+        }
+      }
+
       const handleType = handle.dataset.seatRulerHandle;
       const minSpanPx = Math.round(SEAT_LAYOUT_MIN_SPAN_CM * SEAT_LAYOUT_PIXELS_PER_CM);
+      const activePointerId = event.pointerId;
 
       const onMove = (moveEvent) => {
+        if (moveEvent.pointerId !== activePointerId) return;
         const rulerRect = ruler.getBoundingClientRect();
         const metrics = getSeatAreaMetrics(plan.classroom, plan.seatingArea);
         const pointerY = clamp(moveEvent.clientY - rulerRect.top, metrics.topMarginPx, plan.classroom.height - metrics.bottomMarginPx);
@@ -1432,14 +1732,34 @@ function setupSeatHeightRuler(plan, ruler, content, widthRuler, root = document)
         relayoutSeats(plan, content, widthRuler, ruler, root);
       };
 
-      const onUp = () => {
-        window.removeEventListener('pointermove', onMove);
-        window.removeEventListener('pointerup', onUp);
+      const cleanup = () => {
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onUp);
+        handle.removeEventListener('lostpointercapture', onLostPointerCapture);
+        if (typeof handle.releasePointerCapture === 'function' && handle.hasPointerCapture?.(activePointerId)) {
+          try {
+            handle.releasePointerCapture(activePointerId);
+          } catch (error) {
+            // Ignore capture release errors once the pointer lifecycle is complete.
+          }
+        }
+      };
+
+      const onUp = (upEvent) => {
+        if (upEvent.pointerId !== activePointerId) return;
+        cleanup();
         pushHistory();
       };
 
-      window.addEventListener('pointermove', onMove);
-      window.addEventListener('pointerup', onUp, { once: true });
+      const onLostPointerCapture = () => {
+        cleanup();
+      };
+
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+      handle.addEventListener('pointercancel', onUp);
+      handle.addEventListener('lostpointercapture', onLostPointerCapture);
     });
   });
 }

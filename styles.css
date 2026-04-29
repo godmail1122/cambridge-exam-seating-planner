@@ -8,9 +8,8 @@ body {
   font-size: 13px;
   background: #e8e8e8;
   color: #111;
-  display: flex;
-  flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -97,8 +96,17 @@ body {
 =========================== */
 #appLayout {
   display: flex;
-  flex: 1;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
+}
+
+#workspace {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ===========================
@@ -107,6 +115,7 @@ body {
 #sidebar {
   width: 280px;
   flex-shrink: 0;
+  min-height: 0;
   background: #fafafa;
   border-right: 1px solid #ddd;
   overflow-y: auto;
@@ -381,7 +390,16 @@ body {
 }
 .empty-icon { font-size: 48px; }
 
-#plannerCanvas { position: relative; }
+#plannerCanvas {
+  position: relative;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+.planner-canvas-inner {
+  width: max-content;
+  transform-origin: top left;
+}
 
 /* ===========================
    EXAM DOCUMENT (print area)
@@ -478,7 +496,7 @@ body {
   position: relative;
   border: 2px solid #000;
   background: #fff;
-  touch-action: none;
+  touch-action: auto;
   max-width: 100%;
   max-height: 100%;
 }
@@ -627,6 +645,48 @@ body {
   background: #eef3ff;
 }
 
+@media (pointer: coarse) {
+  .seat-width-ruler-preview {
+    height: 36px;
+    flex-basis: 36px;
+  }
+
+  .seat-height-ruler-preview {
+    width: 36px;
+    flex-basis: 36px;
+  }
+
+  .seat-width-ruler-track {
+    top: 19px;
+  }
+
+  .seat-width-ruler-active {
+    top: 10px;
+    height: 18px;
+  }
+
+  .seat-width-handle {
+    top: 7px;
+    width: 22px;
+    height: 24px;
+  }
+
+  .seat-height-ruler-track {
+    left: 19px;
+  }
+
+  .seat-height-ruler-active {
+    left: 10px;
+    width: 18px;
+  }
+
+  .seat-height-handle {
+    left: 7px;
+    width: 24px;
+    height: 22px;
+  }
+}
+
 .classroom-content {
   position: relative;
   width: 100%;
@@ -677,6 +737,14 @@ body {
   min-width: 30px;
   min-height: 20px;
   box-sizing: border-box;
+}
+
+.rh,
+.rh-rotate,
+.resize-handle,
+.seat-width-handle,
+.seat-height-handle {
+  touch-action: none;
 }
 
 .plan-element:hover { border-color: #000; }
@@ -949,6 +1017,7 @@ body {
   body { background: #fff; }
   #toolbar, #sidebar, #emptyHint, .resize-handle, .rh, .rh-rotate { display: none !important; }
   #appLayout { display: block; }
+  #workspace { display: block; }
   #canvasArea { padding: 0; overflow: visible; }
   .exam-document {
     width: 210mm;
