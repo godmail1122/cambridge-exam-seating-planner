@@ -207,7 +207,15 @@ function bindSidebarEvents() {
     downloadSample();
   });
   document.getElementById('loadLayoutsInput').addEventListener('change', handleLoadLayoutsFile);
-  document.getElementById('exportPdfBtn').addEventListener('click', exportToPdf);
+  const exactExportBtn = document.getElementById('exportPdfExactBtn');
+  if (exactExportBtn) exactExportBtn.addEventListener('click', exportToPdf);
+
+  const editableExportBtn = document.getElementById('exportPdfEditableBtn');
+  if (editableExportBtn) editableExportBtn.addEventListener('click', exportToPdfEditable);
+
+  // Backward compatibility if older markup still has a single export button.
+  const legacyExportBtn = document.getElementById('exportPdfBtn');
+  if (legacyExportBtn) legacyExportBtn.addEventListener('click', exportToPdf);
   document.getElementById('deleteBtn').addEventListener('click', deleteSelectedElement);
 }
 function selectMode(mode) {
@@ -3043,8 +3051,10 @@ function drawPdfCenteredText(pdf, text, x, y, model = {}, options = {}) {
   } = options;
 
   setPdfTextStyle(pdf, model, fontSize);
-  const point = rotatePoint(x, y, rotationCenter.x, rotationCenter.y, angle);
-  pdf.text(String(text), point.x, point.y, { align, angle });
+  // jsPDF text angle direction is opposite to our screen-space rotation math.
+  const pdfAngle = -angle;
+  const point = rotatePoint(x, y, rotationCenter.x, rotationCenter.y, pdfAngle);
+  pdf.text(String(text), point.x, point.y, { align, angle: pdfAngle });
 }
 
 function drawPdfTextBlock(pdf, text, rect, model = {}, options = {}) {
@@ -3085,8 +3095,10 @@ function drawPdfTextBlock(pdf, text, rect, model = {}, options = {}) {
     if (textAlign === 'center') baseX = rect.x + rect.width / 2;
     if (textAlign === 'right') baseX = rect.x + rect.width - paddingX;
     const baseY = startY + index * lineHeight;
-    const point = rotatePoint(baseX, baseY, rotationCenter.x, rotationCenter.y, angle);
-    pdf.text(line, point.x, point.y, { align: textAlign, angle });
+    const pdfAngle = -angle;
+    const point = rotatePoint(baseX, baseY, rotationCenter.x, rotationCenter.y, pdfAngle);
+    // Keep text glyph orientation in sync with rotated element geometry.
+    pdf.text(line, point.x, point.y, { align: textAlign, angle: pdfAngle });
 
     if (!underline) return;
     const textWidth = pdf.getTextWidth(line);
@@ -3095,8 +3107,8 @@ function drawPdfTextBlock(pdf, text, rect, model = {}, options = {}) {
       : textAlign === 'right'
         ? baseX - textWidth
         : baseX;
-    const underlineStart = rotatePoint(startX, baseY + 1.5, rotationCenter.x, rotationCenter.y, angle);
-    const underlineEnd = rotatePoint(startX + textWidth, baseY + 1.5, rotationCenter.x, rotationCenter.y, angle);
+    const underlineStart = rotatePoint(startX, baseY + 1.5, rotationCenter.x, rotationCenter.y, pdfAngle);
+    const underlineEnd = rotatePoint(startX + textWidth, baseY + 1.5, rotationCenter.x, rotationCenter.y, pdfAngle);
     pdf.setLineWidth(Math.max(0.75, fontSize * 0.05));
     pdf.line(underlineStart.x, underlineStart.y, underlineEnd.x, underlineEnd.y);
   });
@@ -3300,12 +3312,28 @@ function drawFacingDirectionElementToPdf(pdf, element, rect) {
   });
 }
 
-function drawElementToPdf(pdf, docEl, element) {
-  const node = docEl.querySelector(`.plan-element[data-id="${element.id}"]`);
-  if (!node) return;
+function getElementRectForPdf(docEl, docRect, element) {
+  const regionSelector = element.region === 'footer' ? '.footer-content' : '.classroom-content';
+  const regionNode = docEl.querySelector(regionSelector);
+  if (regionNode) {
+    const regionRect = regionNode.getBoundingClientRect();
+    return {
+      x: regionRect.left - docRect.left + (Number(element.x) || 0),
+      y: regionRect.top - docRect.top + (Number(element.y) || 0),
+      width: Number(element.width) || 0,
+      height: Number(element.height) || 0,
+    };
+  }
 
+  const node = docEl.querySelector(`.plan-element[data-id="${element.id}"]`);
+  if (!node) return null;
+  return getRelativeRect(node, docRect);
+}
+
+function drawElementToPdf(pdf, docEl, element) {
   const docRect = docEl.getBoundingClientRect();
-  const rect = getRelativeRect(node, docRect);
+  const rect = getElementRectForPdf(docEl, docRect, element);
+  if (!rect) return;
 
   if (element.type === 'seat') {
     drawSeatElementToPdf(pdf, element, rect);
@@ -3357,7 +3385,7 @@ function drawDocumentToPdf(pdf, docEl, plan) {
     .forEach((element) => drawElementToPdf(pdf, docEl, element));
 }
 
-async function exportToPdf() {
+async function exportToPdfEditable() {
   const docEls = Array.from(document.querySelectorAll('.exam-document'));
   if (!docEls.length) { setStatus('Generate a plan first.'); return; }
   const exportPlans = getPlansForCurrentExport();
@@ -3394,6 +3422,62 @@ async function exportToPdf() {
   } catch (err) {
     console.error(err);
     setStatus('Editable PDF export failed. Check console for details.');
+  } finally {
+    selectedNodes.forEach((node) => node.classList.add('selected'));
+  }
+}
+
+async function exportToPdf() {
+  const docEls = Array.from(document.querySelectorAll('.exam-document'));
+  if (!docEls.length) { setStatus('Generate a plan first.'); return; }
+
+  setStatus('Preparing exact PDF export…');
+
+  // Temporarily hide selection UI so handles/outlines do not appear in output.
+  const selectedNodes = Array.from(document.querySelectorAll('.plan-element.selected'));
+  selectedNodes.forEach((node) => node.classList.remove('selected'));
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const renderScale = 2;
+    const firstWidth = docEls[0].clientWidth;
+    const firstHeight = docEls[0].clientHeight;
+    const firstOrient = firstWidth > firstHeight ? 'landscape' : 'portrait';
+    const pdf = new jsPDF({
+      orientation: firstOrient,
+      unit: 'px',
+      format: [firstWidth, firstHeight],
+      compress: true,
+    });
+
+    for (let index = 0; index < docEls.length; index++) {
+      const docEl = docEls[index];
+      const pageWidth = docEl.clientWidth;
+      const pageHeight = docEl.clientHeight;
+
+      if (index > 0) {
+        const orient = pageWidth > pageHeight ? 'landscape' : 'portrait';
+        pdf.addPage([pageWidth, pageHeight], orient);
+      }
+
+      const canvas = await window.html2canvas(docEl, {
+        backgroundColor: '#ffffff',
+        scale: renderScale,
+        useCORS: true,
+        logging: false,
+      });
+
+      const imageData = canvas.toDataURL('image/png');
+      pdf.addImage(imageData, 'PNG', 0, 0, pageWidth, pageHeight);
+    }
+
+    const fileName = 'exam-seating-plan.pdf';
+    pdf.save(fileName);
+    setStatus(`PDF saved as ${fileName}${docEls.length > 1 ? ` with ${docEls.length} pages` : ''}.`);
+  } catch (err) {
+    console.error(err);
+    setStatus('Exact PDF export failed. Falling back to editable export…');
+    await exportToPdfEditable();
   } finally {
     selectedNodes.forEach((node) => node.classList.add('selected'));
   }
