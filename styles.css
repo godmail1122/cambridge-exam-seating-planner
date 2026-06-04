@@ -948,16 +948,17 @@ body {
 .facing-direction-text {
   position: absolute;
   left: 50%;
-  top: 46%;
-  bottom: 8%;
-  width: auto;
-  max-height: none;
+  top: 72%;
+  bottom: auto;
+  width: max-content;
+  max-width: none;
   padding: 0;
   white-space: nowrap;
-  writing-mode: vertical-rl;
+  writing-mode: horizontal-tb;
   text-orientation: mixed;
-  transform: translateX(-50%) rotate(180deg);
-  line-height: 1.1;
+  transform: translate(-50%, -50%) rotate(-90deg);
+  transform-origin: center center;
+  line-height: 1;
 }
 
 /* Resize handles on corners */

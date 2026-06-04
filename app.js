@@ -3305,21 +3305,23 @@ function drawFacingDirectionElementToPdf(pdf, element, rect) {
   ], center.x, center.y, angle);
   drawPdfPolygon(pdf, headPoints, { fillColor: '#000000', strokeColor: '#000000', lineWidth: 1 });
 
-  const characters = String(element.label || '').split('');
-  const charSize = element.fontSize || 11;
-  const totalHeight = characters.length * charSize * 0.95;
-  const startY = rect.y + rect.height * 0.5 + Math.max(0, (rect.height * 0.42 - totalHeight) / 2) + charSize;
-
-  characters.forEach((character, index) => {
-    drawPdfCenteredText(pdf, character, rect.x + rect.width / 2, startY + index * charSize * 0.95, {
-      ...element,
-      fontWeight: element.fontWeight || 'normal',
-    }, {
-      fontSize: charSize,
-      angle,
-      rotationCenter: center,
-      align: 'center',
-    });
+  drawPdfTextBlock(pdf, element.label, {
+    x: rect.x,
+    y: rect.y + rect.height * 0.5,
+    width: rect.width,
+    height: rect.height * 0.44,
+  }, {
+    ...element,
+    fontWeight: element.fontWeight || 'normal',
+    textAlign: 'center',
+  }, {
+    angle: angle - 90,
+    rotationCenter: center,
+    paddingX: 0,
+    paddingY: 0,
+    valign: 'middle',
+    noWrap: true,
+    textAlign: 'center',
   });
 }
 
