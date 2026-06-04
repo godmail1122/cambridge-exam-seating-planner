@@ -197,6 +197,7 @@ function bindSidebarEvents() {
     document.getElementById('loadLayoutsInput').click();
   });
   document.getElementById('saveRoomLayoutBtn').addEventListener('click', saveRoomLayout);
+  document.getElementById('copyRoomLayoutBtn').addEventListener('click', copyRoomLayout);
   document.getElementById('deleteRoomLayoutBtn').addEventListener('click', deleteCurrentRoomLayout);
   document.getElementById('saveAllRoomLayoutsBtn').addEventListener('click', () => saveLayouts('all'));
   document.getElementById('previewMultiLayoutsBtn').addEventListener('click', previewMultiLayouts);
@@ -354,12 +355,7 @@ function handleMultiRoomNumberChange() {
     return;
   }
 
-  const options = getMultiLayoutOptions();
-  const plan = buildPlan({ room: roomName }, [], options.columns, options.rows, null, { manualSeatMode: options.manualSeatMode });
-  state.multiRoomLayouts.push(plan);
-  state.multiCurrentRoomIndex = state.multiRoomLayouts.length - 1;
-  activateMultiLayoutView(state.multiCurrentRoomIndex);
-  setStatus(`Created a new room layout for ${roomName}.`);
+  updateLayoutActionState();
 }
 
 function loadSelectedSavedRoom() {
@@ -827,6 +823,11 @@ function getMultiLayoutOptions() {
   };
 }
 
+function createMultiRoomLayout(roomName) {
+  const options = getMultiLayoutOptions();
+  return buildPlan({ room: roomName }, [], options.columns, options.rows, null, { manualSeatMode: options.manualSeatMode });
+}
+
 function saveRoomLayout() {
   const roomName = document.getElementById('multiRoomNumberInput').value.trim();
   if (!roomName) {
@@ -836,8 +837,9 @@ function saveRoomLayout() {
 
   let plan = state.multiRoomLayouts[state.multiCurrentRoomIndex];
   if (!plan) {
-    handleMultiRoomNumberChange();
-    plan = state.multiRoomLayouts[state.multiCurrentRoomIndex];
+    plan = createMultiRoomLayout(roomName);
+    state.multiRoomLayouts.push(plan);
+    state.multiCurrentRoomIndex = state.multiRoomLayouts.length - 1;
   }
   if (!plan) return;
 
@@ -862,6 +864,41 @@ function saveRoomLayout() {
   activateMultiLayoutView(state.multiCurrentRoomIndex);
   pushHistory();
   setStatus(`Saved room layout for ${roomName}.`);
+}
+
+function copyRoomLayout() {
+  const roomName = document.getElementById('multiRoomNumberInput').value.trim();
+  if (!roomName) {
+    setStatus('Enter a room number first.');
+    return;
+  }
+
+  const plan = state.multiRoomLayouts[state.multiCurrentRoomIndex];
+  if (!plan) {
+    setStatus('Create or load a room layout first.');
+    return;
+  }
+
+  const currentRoomName = String(plan?.meta?.room || '').trim();
+  if (currentRoomName === roomName) {
+    setStatus('Enter a different room number to copy this layout.');
+    return;
+  }
+
+  const copiedPlan = buildRoomLayoutTemplate(plan, roomName);
+  const existingIndex = state.multiRoomLayouts.findIndex((entry) => String(entry?.meta?.room || '').trim() === roomName);
+
+  if (existingIndex >= 0) {
+    state.multiRoomLayouts[existingIndex] = copiedPlan;
+    state.multiCurrentRoomIndex = existingIndex;
+  } else {
+    state.multiRoomLayouts.push(copiedPlan);
+    state.multiCurrentRoomIndex = state.multiRoomLayouts.length - 1;
+  }
+
+  activateMultiLayoutView(state.multiCurrentRoomIndex);
+  pushHistory();
+  setStatus(`Copied room layout to ${roomName}.`);
 }
 
 function deleteCurrentRoomLayout() {
@@ -2707,17 +2744,19 @@ function renderRoomNav() {
 
 function updateLayoutActionState() {
   const saveRoomLayoutBtn = document.getElementById('saveRoomLayoutBtn');
+  const copyRoomLayoutBtn = document.getElementById('copyRoomLayoutBtn');
   const deleteRoomLayoutBtn = document.getElementById('deleteRoomLayoutBtn');
   const saveAllRoomLayoutsBtn = document.getElementById('saveAllRoomLayoutsBtn');
   const previewMultiLayoutsBtn = document.getElementById('previewMultiLayoutsBtn');
   const savePreviewEditsBtn = document.getElementById('savePreviewEditsBtn');
   const loadRoomLayoutBtn = document.getElementById('loadRoomLayoutBtn');
   const roomInput = document.getElementById('multiRoomNumberInput');
-  if (!saveRoomLayoutBtn || !deleteRoomLayoutBtn || !saveAllRoomLayoutsBtn || !previewMultiLayoutsBtn || !savePreviewEditsBtn || !loadRoomLayoutBtn || !roomInput) return;
+  if (!saveRoomLayoutBtn || !copyRoomLayoutBtn || !deleteRoomLayoutBtn || !saveAllRoomLayoutsBtn || !previewMultiLayoutsBtn || !savePreviewEditsBtn || !loadRoomLayoutBtn || !roomInput) return;
 
   const hasLayouts = state.multiRoomLayouts.length > 0;
   const hasRoomNumber = !!roomInput.value.trim();
   saveRoomLayoutBtn.disabled = !hasRoomNumber;
+  copyRoomLayoutBtn.disabled = !(hasRoomNumber && hasLayouts);
   deleteRoomLayoutBtn.disabled = !hasLayouts;
   saveAllRoomLayoutsBtn.disabled = !hasLayouts;
   previewMultiLayoutsBtn.disabled = !hasLayouts;
