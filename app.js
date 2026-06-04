@@ -27,6 +27,9 @@ const SEAT_LAYOUT_SIDE_MARGIN_CM = 1;
 const SEAT_LAYOUT_MIN_SPAN_CM = 4;
 const BROWSER_LAYOUTS_STORAGE_KEY = 'exam-seating-browser-layouts';
 const BROWSER_LAYOUTS_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const PDF_EXACT_EXPORT_MIN_SCALE = 3;
+const PDF_EXACT_EXPORT_MAX_SCALE = 4;
+const PDF_EXACT_EXPORT_MAX_PIXELS = 18000000;
 
 // ============================================================
 //  INIT
@@ -2876,6 +2879,14 @@ function getPlansForCurrentExport() {
   return [state.plans[state.currentPlanIndex]].filter(Boolean);
 }
 
+function getExactPdfRenderScale(docEl) {
+  const baseScale = Math.max(PDF_EXACT_EXPORT_MIN_SCALE, window.devicePixelRatio || 1);
+  const width = Math.max(1, docEl.clientWidth);
+  const height = Math.max(1, docEl.clientHeight);
+  const maxScaleByPixels = Math.sqrt(PDF_EXACT_EXPORT_MAX_PIXELS / (width * height));
+  return clamp(Math.min(baseScale, maxScaleByPixels), 1, PDF_EXACT_EXPORT_MAX_SCALE);
+}
+
 function getRelativeRect(node, rootRect) {
   const rect = node.getBoundingClientRect();
   return {
@@ -3439,7 +3450,6 @@ async function exportToPdf() {
 
   try {
     const { jsPDF } = window.jspdf;
-    const renderScale = 2;
     const firstWidth = docEls[0].clientWidth;
     const firstHeight = docEls[0].clientHeight;
     const firstOrient = firstWidth > firstHeight ? 'landscape' : 'portrait';
@@ -3460,6 +3470,7 @@ async function exportToPdf() {
         pdf.addPage([pageWidth, pageHeight], orient);
       }
 
+      const renderScale = getExactPdfRenderScale(docEl);
       const canvas = await window.html2canvas(docEl, {
         backgroundColor: '#ffffff',
         scale: renderScale,
